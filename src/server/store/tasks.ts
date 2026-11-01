@@ -7,4 +7,6 @@ export interface Task {
   createdAt: Date;
 }
 
-export const tasks: Task[] = [];
+const globalForTasks = globalThis as unknown as { tasks?: Task[] };
+
+export const tasks = (globalForTasks.tasks ??= []);

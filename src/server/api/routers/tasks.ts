@@ -2,14 +2,9 @@ import { TRPCError } from "@trpc/server";
 import { randomUUID } from "crypto";
 import { z } from "zod";
 
+import { description, title } from "@/lib/schemas/task";
 import { createTRPCRouter, publicProcedure } from "@/server/api/trpc";
 import { type Task, tasks } from "@/server/store/tasks";
-
-const title = z.string().trim().min(1);
-const description = z
-  .string()
-  .trim()
-  .transform((s) => s || undefined);
 
 const notFound = () =>
   new TRPCError({ code: "NOT_FOUND", message: "Task not found" });
@@ -26,6 +21,15 @@ export const tasksRouter = createTRPCRouter({
         createdAt: new Date(),
       };
       tasks.push(task);
+      return task;
+    }),
+
+  get: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .query(({ input }) => {
+      const task = tasks.find((t) => t.id === input.id);
+      if (!task) throw notFound();
+
       return task;
     }),
 
