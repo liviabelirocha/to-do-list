@@ -115,5 +115,4 @@ Errors:
 
 ## Notes
 
-- In development, tRPC adds an artificial 100–500ms delay to every call (`timingMiddleware` in `src/server/api/trpc.ts`). This simulates network latency.
 - Dates are formatted in `pt-BR`. They're rendered on the server in the server's time zone, so if the server and the browser are in different time zones the dates can cause a hydration mismatch.
