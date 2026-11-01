@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 
 import { Modal } from "@/app/_components/modal";
 
+// The create/edit pages are server components and can't pass functions to client
+// components, so this client wrapper provides Modal's onClose for these routes.
 export function TaskModal({
   title,
   children,

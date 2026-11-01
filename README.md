@@ -1,29 +1,119 @@
-# Create T3 App
+# Tasks
 
-This is a [T3 Stack](https://create.t3.gg/) project bootstrapped with `create-t3-app`.
+A small task manager built with Next.js 15 and tRPC. Tasks are shown on a two-column board (pending / completed), can be dragged between columns, and are created and edited in a modal. The backend keeps everything in memory.
 
-## What's next? How do I make an app with this?
+## Running
 
-We try to keep this project as simple as possible, so you can start with just the scaffolding we set up for you, and add additional things later when they become necessary.
+Requirements: Node.js 18.18+ and pnpm.
 
-If you are not familiar with the different technologies used in this project, please refer to the respective docs. If you still are in the wind, please join our [Discord](https://t3.gg/discord) and ask for help.
+```bash
+pnpm install
+pnpm dev
+```
 
-- [Next.js](https://nextjs.org)
-- [NextAuth.js](https://next-auth.js.org)
-- [Prisma](https://prisma.io)
-- [Drizzle](https://orm.drizzle.team)
-- [Tailwind CSS](https://tailwindcss.com)
-- [tRPC](https://trpc.io)
+Then open http://localhost:3000.
 
-## Learn More
+Other scripts:
 
-To learn more about the [T3 Stack](https://create.t3.gg/), take a look at the following resources:
+| Command             | What it does               |
+| ------------------- | -------------------------- |
+| `pnpm build`        | Production build           |
+| `pnpm start`        | Serve the production build |
+| `pnpm typecheck`    | TypeScript check           |
+| `pnpm lint`         | ESLint                     |
+| `pnpm format:write` | Prettier                   |
 
-- [Documentation](https://create.t3.gg/)
-- [Learn the T3 Stack](https://create.t3.gg/en/faq#what-learning-resources-are-currently-available) — Check out these awesome tutorials
+Data lives only in the server process, so it's lost whenever the server restarts.
 
-You can check out the [create-t3-app GitHub repository](https://github.com/t3-oss/create-t3-app) — your feedback and contributions are welcome!
+## Stack
 
-## How do I deploy this?
+- **Next.js 15** (App Router) with React 19
+- **tRPC 11** + **TanStack Query 5** for the API and client cache, with **superjson** so `Date`s survive the wire
+- **Zod** for validation, shared between server and form
+- **react-hook-form** for the form state
+- **@dnd-kit/core** for drag and drop
+- **sonner** for toasts
+- **Tailwind CSS 4** for styling
 
-Follow our deployment guides for [Vercel](https://create.t3.gg/en/deployment/vercel), [Netlify](https://create.t3.gg/en/deployment/netlify) and [Docker](https://create.t3.gg/en/deployment/docker) for more information.
+The project was scaffolded with create-t3-app.
+
+## Structure
+
+```
+src/
+  app/
+    layout.tsx                    Providers and toaster
+    _components/modal.tsx         Generic modal
+    (board)/
+      layout.tsx                  Prefetches the board and renders it around every route below
+      page.tsx                    "/" (renders nothing; the board is in the layout)
+      _components/                Board, Column, TaskCard
+      tasks/
+        new/page.tsx              "/tasks/new": create modal
+        [id]/edit/page.tsx        "/tasks/:id/edit": edit modal
+        _components/              TaskForm, TaskModal
+    api/trpc/[trpc]/route.ts      tRPC HTTP handler
+  lib/schemas/task.ts             Zod field schemas used by router and form
+  server/
+    api/routers/tasks.ts          Task procedures
+    store/tasks.ts                In-memory task list
+  trpc/                           tRPC clients (React and server components)
+```
+
+Components that belong to a single route live in that route's `_components` folder.
+
+## API
+
+All procedures are under `tasks` (`/api/trpc/tasks.<name>`).
+
+| Procedure | Type     | Input                                          | Returns                         |
+| --------- | -------- | ---------------------------------------------- | ------------------------------- |
+| `list`    | query    | `{ completed: boolean, cursor?: string }`      | `{ items, nextCursor?, total }` |
+| `get`     | query    | `{ id }`                                       | task                            |
+| `create`  | mutation | `{ title, description? }`                      | task                            |
+| `update`  | mutation | `{ id, title?, description?: string \| null }` | task                            |
+| `toggle`  | mutation | `{ id }`                                       | task                            |
+| `delete`  | mutation | `{ id }`                                       | `{ id }`                        |
+
+A task is `{ id, title, description?, completed, completedAt?, createdAt }`. The server generates `id` (UUID), `createdAt`, `completed: false` and `completedAt`.
+
+Errors:
+
+- An empty or whitespace-only title is rejected with `BAD_REQUEST`.
+- An unknown `id` returns `NOT_FOUND` ("Task not found").
+- An unknown `cursor` returns `BAD_REQUEST` ("Invalid cursor").
+
+## How it works
+
+**Board and modals.** The board lives in the `(board)` route group's layout, and `/tasks/new` and `/tasks/:id/edit` render only a modal. Opening or closing a modal is a normal navigation, so the board stays mounted underneath, and the create/edit URLs can be linked or reloaded directly.
+
+**SSR.** The board layout prefetches the first page of each column on the server, and `HydrateClient` passes that data to the client cache, so the first HTML already contains the tasks. The edit page also loads its task on the server and returns a 404 for unknown ids.
+
+**Infinite scroll.** Each column paginates on its own, 10 tasks per page:
+
+- Pending tasks are sorted newest first.
+- Completed tasks are sorted by most recently completed.
+- The cursor is the id of the last task loaded.
+- Each column has its own scroll area with an invisible sentinel at the end, and an `IntersectionObserver` loads the next page when the sentinel comes into view.
+
+**Drag and drop.** Dropping a card on the other column calls `toggle`, which sets or clears `completedAt` on the server:
+
+- A drag only starts after 5px of movement, so clicking a card still opens it for editing.
+- The dragged card is rendered in a `DragOverlay`, so the column's scroll area doesn't clip it.
+
+**Mutations.** There are no optimistic updates, and the client doesn't repeat any business rule:
+
+- After each mutation the client invalidates `tasks.list` and refetches from the server.
+- Success and error messages are shown as toasts.
+- Server error messages, such as "Task not found", are shown as they are.
+
+**Validation.** `title` and `description` are defined once in `src/lib/schemas/task.ts`, and the router and the form both use them. The form blocks submission when the title is empty.
+
+**Clearing a description.** In `update`, `undefined` leaves a field unchanged and `description: null` clears it. The form sends `null` when the description field is emptied.
+
+**In-memory store.** The list is kept on `globalThis`. Next.js loads server modules separately for the API route handler and for server components, so a plain module-level array would give SSR and the API two different lists.
+
+## Notes
+
+- In development, tRPC adds an artificial 100–500ms delay to every call (`timingMiddleware` in `src/server/api/trpc.ts`). This simulates network latency.
+- Dates are formatted in `pt-BR`. They're rendered on the server in the server's time zone, so if the server and the browser are in different time zones the dates can cause a hydration mismatch.

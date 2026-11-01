@@ -12,6 +12,8 @@ export default async function EditTaskPage({
 }) {
   const { id } = await params;
 
+  // Loaded on the server so the form opens already filled; an unknown id renders
+  // the 404 page instead of an empty form.
   const task = await api.tasks.get({ id }).catch((error) => {
     if (error instanceof TRPCError && error.code === "NOT_FOUND") notFound();
     throw error;

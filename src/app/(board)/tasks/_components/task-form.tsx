@@ -9,12 +9,16 @@ import { z } from "zod";
 import { description, title } from "@/lib/schemas/task";
 import { api, type RouterOutputs } from "@/trpc/react";
 
+// Same field schemas the backend validates with, so the form can't send anything the
+// server would reject.
 const schema = z.object({ title, description: description.optional() });
 
 export function TaskForm({ task }: { task?: RouterOutputs["tasks"]["get"] }) {
   const router = useRouter();
   const utils = api.useUtils();
 
+  // No optimistic updates: the server is the only source of truth, so the list is
+  // refetched before closing the modal instead of being patched on the client.
   const callbacks = (message: string) => ({
     onSuccess: async () => {
       toast.success(message);
@@ -42,6 +46,8 @@ export function TaskForm({ task }: { task?: RouterOutputs["tasks"]["get"] }) {
 
   const onSubmit = (values: z.output<typeof schema>) => {
     if (task) {
+      // An emptied description field becomes undefined after parsing, which update
+      // reads as "leave unchanged"; null tells it to clear the description.
       update.mutate({
         id: task.id,
         title: values.title,
